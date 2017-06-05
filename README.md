@@ -1,2 +1,4 @@
 # zhihu_cup
-zhihu cup
+draft code for zhihu cup
+Code under construction
+

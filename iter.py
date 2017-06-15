@@ -1,4 +1,6 @@
-import os
+import os,sys
+curr_path = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(os.path.join(curr_path, "../mxnet/python"))
 import numpy as np
 import mxnet as mx
 from read_embed import read_embed
@@ -49,12 +51,24 @@ class zhihu_iter(mx.io.DataIter):
                 for v in self.buckets:
                     f.write(v+'\n')
         self.reset()
+        keys = self.max_bucket_key.split(',')
+        self.provide_data = []
+
         if embed_mode %2 == 0:
             self.char_dict, self.char_dict_size, self.char_dict_dim = read_embed(char_embed_path)
+            self.provide_data +=[('tc_array',(self.batch_size,int(keys[0]),self.char_dict_dim)),\
+                                 ('cc_array',(self.batch_size,int(keys[1]),self.char_dict_dim))] 
         if embed_mode > 0:
             self.word_dict, self.word_dict_size, self.word_dict_dim = read_embed(word_embed_path)
-        self.provide_data = [('data', (self.batch_size, ))]
+            if embed_mode %2 == 0:
+                self.provide_data +=[('tw_array',(self.batch_size,int(keys[2]),self.word_dict_dim)),\
+                                     ('cw_array',(self.batch_size,int(keys[3]),self.word_dict_dim))] 
+            else:
+                self.provide_data +=[('tw_array',(self.batch_size,int(keys[0]),self.word_dict_dim)),\
+                                     ('cw_array',(self.batch_size,int(keys[1]),self.word_dict_dim))] 
+
         self.provide_label = [('label', (self.batch_size, len(self.topic_info) + 1))]
+
 
 
     def create_buckets(self, buckets=None):
@@ -178,7 +192,6 @@ class zhihu_iter(mx.io.DataIter):
             bucket_key = self.buckets[idx]
             inds= self.bucket_samples_inds[bucket_key] \
                     [self.bucket_offset[idx]:self.bucket_offset[idx]+self.batch_size]
-
             shapes= [(self.batch_size, int(v)) for v in bucket_key.split(',')]
             if len(shapes) == 4:
                 tc_array = np.zeros(shapes[0]+(self.char_dict_dim,))
@@ -191,6 +204,8 @@ class zhihu_iter(mx.io.DataIter):
             else:
                 tw_array = np.zeros(shapes[0]+(self.word_dict_dim,))
                 cw_array = np.zeros(shapes[1]+(self.word_dict_dim,))
+            #print '*'*20
+            #print shapes,bucket_key,tw_array.shape, cw_array.shape
             
             label = np.zeros((self.batch_size, len(self.topic_encode)+1))
             for i,ind in enumerate(inds):
@@ -209,28 +224,31 @@ class zhihu_iter(mx.io.DataIter):
                     cc = tc
                     cw = tw
 
-                data_name = []
-                data = []
                 if self.embed_mode  %2 == 0:
                     for j, v in enumerate(tc.split(',')):
                         tc_array[i,j] = self.char_dict[v]
                     for j, v in enumerate(cc.split(',')):
                         cc_array[i,j] = self.char_dict[v]
-                    data_name += ['tc_array', 'cc_array']
-                    data += [mx.nd.array(tc_array), mx.nd.array(cc_array)]
                 if self.embed_mode > 0:
                     for j, v in enumerate(tw.split(',')):
                         tw_array[i,j] = self.word_dict[v]
                     for j, v in enumerate(cw.split(',')):
                         cw_array[i,j] = self.word_dict[v]
-                    data_name += ['tw_array', 'cw_array']
-                    data += [mx.nd.array(tw_array), mx.nd.array(cw_array)]
 
                 top = self.question_topic[ind].split()[1].split(',')
                 for t in top:
                     label[i,self.topic_encode[t]] = 1
+            data_name = []
+            data = []
+            if self.embed_mode  %2 == 0:
+                data_name += ['tc_array', 'cc_array']
+                data += [mx.nd.array(tc_array), mx.nd.array(cc_array)]
+            if self.embed_mode > 0:
+                data_name += ['tw_array', 'cw_array']
+                data += [mx.nd.array(tw_array), mx.nd.array(cw_array)]
             label = [mx.nd.array(label)]
             label_name = ['label']
+            #print bucket_key, data
             yield SimpleBatch(data_name, data, label_name, label, bucket_key)
         raise StopIteration
 
@@ -238,4 +256,4 @@ if __name__ == '__main__':
     ziter = zhihu_iter('tidy_question_train_set.txt','tidy_question_topic_train_set.txt',embed_mode=1)
     #ziter.reset()
     for i in ziter:
-        print i
+        print i.provide_data

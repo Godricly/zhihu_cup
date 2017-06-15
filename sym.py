@@ -1,4 +1,6 @@
-
+import os,sys
+curr_path = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(os.path.join(curr_path, "../mxnet/python"))
 import mxnet as mx
 import numpy as np
 
@@ -43,6 +45,9 @@ def fc_module(data, prefix, num_hidden=256):
         return relu_fc1
 
 def sym_gen_char(bucket_key):
+    num_layers = 1
+    num_class = 2000
+    num_hidden = 512
     key = bucket_key.split(',')
     tc_length = int(key[0])
     cc_length = int(key[1])
@@ -55,17 +60,55 @@ def sym_gen_char(bucket_key):
     cc_slices = list(mx.symbol.SliceChannel(data=cc_data, axis=1, num_outputs=cc_length, squeeze_axis=True, name='cc_slice'))
     tc_concat, _ = tc_cell.unroll(tc_length, inputs = tc_slices, merge_outputs=True, layout='TNC')
     cc_concat, _ = cc_cell.unroll(cc_length, inputs = cc_slices, merge_outputs=True, layout='TNC')
-    tc_concat = mx.sym.swapaxes(tc_concat, 0, 1)
-    cc_concat = mx.sym.swapaxes(cc_concat, 0, 1)
+    tc_concat = mx.sym.transpose(tc_concat, (1, 2, 0))
+    cc_concat = mx.sym.transpose(cc_concat, (1, 2, 0))
+    tc_concat = mx.sym.Pooling(tc_concat, kernel=(1,), global_pool = True, pool_type='max')
+    cc_concat = mx.sym.Pooling(cc_concat, kernel=(1,), global_pool = True, pool_type='max')
+    feature = mx.sym.Concat(*[tc_concat, cc_concat], name= 'concat')
+    feature = mx.sym.Dropout(feature, p=0.5)
+    feature = fc_module(feature, 'feature', num_hidden=2000)
+    loss = mx.sym.LogisticRegressionOutput(feature, label=label, name='regression')
+    return loss
 
 
 def sym_gen_word(bucket_key):
+    num_layers = 1
+    num_class = 2000
+    num_hidden = 512
+    key = bucket_key.split(',')
+    tw_length = int(key[0])
+    cw_length = int(key[1])
+    tw_data = mx.sym.Variable('tw_array')
+    cw_data = mx.sym.Variable('cw_array')
+    label   = mx.sym.Variable('label')
+    tw_cell = mx.rnn.FusedRNNCell(num_hidden, num_layers=num_layers, bidirectional=True, mode='lstm', prefix ='tw_')
+    cw_cell = mx.rnn.FusedRNNCell(num_hidden, num_layers=num_layers, bidirectional=True, mode='lstm', prefix ='cw_')
+    tw_slices = list(mx.symbol.SliceChannel(data=tw_data, axis=1, num_outputs=tw_length, squeeze_axis=True, name='tw_slice'))
+    cw_slices = list(mx.symbol.SliceChannel(data=cw_data, axis=1, num_outputs=cw_length, squeeze_axis=True, name='cw_slice'))
+    tw_concat, _ = tw_cell.unroll(tw_length, inputs = tw_slices, merge_outputs=True, layout='TNC')
+    cw_concat, _ = cw_cell.unroll(cw_length, inputs = cw_slices, merge_outputs=True, layout='TNC')
+    tw_concat = mx.sym.transpose(tw_concat, (1, 2, 0))
+    cw_concat = mx.sym.transpose(cw_concat, (1, 2, 0))
+    tw_concat = mx.sym.Pooling(tw_concat, kernel=(1,), global_pool = True, pool_type='max')
+    cw_concat = mx.sym.Pooling(cw_concat, kernel=(1,), global_pool = True, pool_type='max')
+    feature = mx.sym.Concat(*[tw_concat, cw_concat], name= 'concat')
+    feature = mx.sym.Dropout(feature, p=0.5)
+    feature = fc_module(feature, 'feature', num_hidden=2000)
+    loss = mx.sym.LogisticRegressionOutput(feature, label=label, name='regression')
+    data_name = ['tw_array', 'cw_array']
+    label_name = ['label']
+    return loss, data_name, label_name
 
 
 def sym_gen_both(bucket_key):
-
-
+    num_layers = 1
+    num_class = 2000
+    num_hidden = 512
     key = bucket_key.split(',')
+    tc_length = int(key[0])
+    cc_length = int(key[1])
+    tw_length = int(key[2])
+    cw_length = int(key[3])
     tc_data = mx.sym.Variable('tc_array')
     cc_data = mx.sym.Variable('cc_array')
     tw_data = mx.sym.Variable('tw_array')
@@ -83,34 +126,29 @@ def sym_gen_both(bucket_key):
     cc_concat, _ = cc_cell.unroll(cc_length, inputs = cc_slices, merge_outputs=True, layout='TNC')
     tw_concat, _ = tw_cell.unroll(tw_length, inputs = tw_slices, merge_outputs=True, layout='TNC')
     cw_concat, _ = cw_cell.unroll(cw_length, inputs = cw_slices, merge_outputs=True, layout='TNC')
-    tc_concat = mx.sym.swapaxes(tc_concat, 0, 1)
-    cc_concat = mx.sym.swapaxes(cc_concat, 0, 1)
-    tw_concat = mx.sym.swapaxes(tw_concat, 0, 1)
-    cw_concat = mx.sym.swapaxes(cw_concat, 0, 1)
-    #ch_outputs = mx.sym.Concat(*[tc_concat, cc_concat])
-    #wd_outputs = mx.sym.Concat(*[tw_concat, cw_concat])
-    #title_outputs= mx.sym.Concat(*[tc_concat, tw_concat])
-    #content_outputs= mx.sym.Concat(*[cc_concat, cw_concat])
-    #ch_outputs = fc_module(ch_outputs, 'ch_', num_hidden = 2000)
-    #wd_outputs = fc_module(wd_outputs, 'wd_', num_hidden = 2000)
-    #title_outputs = fc_module(title_outputs, 'title_', num_hidden = 2000)
-    #content_outputs = fc_module(content_outputs, 'content_', num_hidden = 2000)
-    #feature = mx.sym.Concat(*[ch_outputs, wd_outputs, title_outputs, content_outputs])
-    feature = mx.sym.Concat(*[tc_concat, cc_concat, tw_concat, cw_concat])
-    feature = fc_module(feature, 'feature', num_hidden=4000)
-    feature = mx.sym.FullyConnected(data=feature, num_hidden=num_class, name='fc1')
-    loss = mx.sym.LogisticRegressionOutput(feature, label, name='regression')
+    tc_concat = mx.sym.transpose(tc_concat, (1, 2, 0))
+    cc_concat = mx.sym.transpose(cc_concat, (1, 2, 0))
+    tw_concat = mx.sym.transpose(tw_concat, (1, 2, 0))
+    cw_concat = mx.sym.transpose(cw_concat, (1, 2, 0))
+    tc_concat = mx.sym.Pooling(tc_concat, kernel=(1,), global_pool = True, pool_type='max')
+    cc_concat = mx.sym.Pooling(cc_concat, kernel=(1,), global_pool = True, pool_type='max')
+    tw_concat = mx.sym.Pooling(tw_concat, kernel=(1,), global_pool = True, pool_type='max')
+    cw_concat = mx.sym.Pooling(cw_concat, kernel=(1,), global_pool = True, pool_type='max')
+    feature = mx.sym.Concat(*[tc_concat, cc_concat, tw_concat, cw_concat], name= 'concat')
+    feature = mx.sym.Dropout(feature, p=0.5)
+    feature = fc_module(feature, 'feature', num_hidden=2000)
+    loss = mx.sym.LogisticRegressionOutput(feature, label=label, name='regression')
     return loss
 
 if __name__ == '__main__':
-    sym = sym_gen(100,100, 100, 100)
+    sym = sym_gen_both('100,33,11,21')
     batch_size = 32
     dim = 256
     length = 100
-    shapes = sym.infer_shape_partial(tc_array=(batch_size,length,dim),
-                                     cc_array=(batch_size,length,dim),
-                                     tw_array=(batch_size,length,dim),
-                                     cw_array=(batch_size,length,dim),
+    shapes = sym.infer_shape_partial(tc_array=(batch_size,100,dim),
+                                     cc_array=(batch_size,33,dim),
+                                     tw_array=(batch_size,11,dim),
+                                     cw_array=(batch_size,21,dim),
                                      label=(batch_size,2000))
     names = sym.list_arguments()
     for name, shape in zip(names, shapes[0]):

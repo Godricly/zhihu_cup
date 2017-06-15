@@ -1,4 +1,3 @@
-import mxnet as mx
 from read_embed import read_embed
 char_raw = open('sorted_char_count.txt').readlines()
 word_raw = open('sorted_word_count.txt').readlines()

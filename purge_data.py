@@ -1,4 +1,3 @@
-import mxnet as mx
 from read_embed import read_embed
 char_embed_path='./char_embedding.txt'
 word_embed_path='./word_embedding.txt'

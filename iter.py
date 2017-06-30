@@ -24,7 +24,7 @@ class SimpleBatch(object):
 
 class zhihu_iter(mx.io.DataIter):
     def __init__(self, question_set_path,
-            question_topic,
+            question_topic=None,
             topic_info='topic_info.txt',
             char_embed_path='./char_embedding.txt',
             word_embed_path='./word_embedding.txt',
@@ -32,8 +32,12 @@ class zhihu_iter(mx.io.DataIter):
             batch_size=32):
         with open(question_set_path) as f:
             self.raw_questions = f.readlines()
-        with open(question_topic) as f:
-            self.question_topic = f.readlines()
+        if question_topic is not None:
+            with open(question_topic) as f:
+                self.question_topic = f.readlines()
+        else:
+                self.question_topic = None
+
         with open(topic_info) as f:
             self.topic_info = f.readlines()
             self.topic_encode = {v.split('\t', 1)[0] : i+1 for i,v in enumerate(self.topic_info)}
@@ -220,6 +224,8 @@ class zhihu_iter(mx.io.DataIter):
                         cw = values[3]
                     if len(values) == 5:
                         cw = values[4]
+                    else:
+                        cw = tw
                 else:
                     cc = tc
                     cw = tw
@@ -234,10 +240,10 @@ class zhihu_iter(mx.io.DataIter):
                         tw_array[i,j] = self.word_dict[v]
                     for j, v in enumerate(cw.split(',')):
                         cw_array[i,j] = self.word_dict[v]
-
-                top = self.question_topic[ind].split()[1].split(',')
-                for t in top:
-                    label[i,self.topic_encode[t]] = 1
+                if self.question_topic is not None:
+                    top = self.question_topic[ind].split()[1].split(',')
+                    for t in top:
+                        label[i,self.topic_encode[t]] = 1
             data_name = []
             data = []
             if self.embed_mode  %2 == 0:
